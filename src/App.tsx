@@ -1,20 +1,44 @@
-import { useMemo } from 'react'
-import { buildGroupTree, parseMdC, tokenizeMdC } from './jsesh'
+import { useMemo, useState } from 'react'
+import { HieroglyphCanvas, buildGroupTree, parseMdC, tokenizeMdC } from './jsesh'
 import './App.css'
 
 const sampleMdC = 'A1-B1:C1*D1'
 
 function App() {
-  const tokens = useMemo(() => tokenizeMdC(sampleMdC), [])
-  const topItemList = useMemo(() => parseMdC(sampleMdC), [])
+  const [mdcText, setMdcText] = useState(sampleMdC)
+
+  const tokens = useMemo(() => tokenizeMdC(mdcText), [mdcText])
+  const parseResult = useMemo(() => {
+    try {
+      return { topItemList: parseMdC(mdcText), error: null as string | null }
+    } catch (error) {
+      return {
+        topItemList: null,
+        error: error instanceof Error ? error.message : 'Unknown parser error',
+      }
+    }
+  }, [mdcText])
+
   const groupedTree = useMemo(() => {
-    const firstCadrat = topItemList.items[0]
+    if (!parseResult.topItemList) {
+      return null
+    }
+
+    const firstCadrat = parseResult.topItemList.items[0]
     if (!firstCadrat) {
       return null
     }
 
     return buildGroupTree(firstCadrat.flattenHieroglyphs())
-  }, [topItemList])
+  }, [parseResult.topItemList])
+
+  const astPreview = useMemo(() => {
+    if (parseResult.error) {
+      return `Parser error: ${parseResult.error}`
+    }
+
+    return JSON.stringify(parseResult.topItemList, null, 2)
+  }, [parseResult.error, parseResult.topItemList])
 
   return (
     <main className="app-shell">
@@ -28,6 +52,20 @@ function App() {
       </header>
 
       <section className="overview-grid">
+        <article className="panel panel-wide">
+          <h2>MdC Eingabe</h2>
+          <textarea
+            className="mdc-input"
+            value={mdcText}
+            onChange={(event) => setMdcText(event.target.value)}
+            spellCheck={false}
+            aria-label="MdC Eingabetext"
+          />
+          <div className="render-preview">
+            <HieroglyphCanvas mdc={mdcText} />
+          </div>
+        </article>
+
         <article className="panel">
           <h2>Ordner</h2>
           <ul>
@@ -41,8 +79,8 @@ function App() {
         </article>
 
         <article className="panel">
-          <h2>Beispiel MdC</h2>
-          <pre>{sampleMdC}</pre>
+          <h2>Aktuelles MdC</h2>
+          <pre>{mdcText}</pre>
         </article>
 
         <article className="panel panel-wide">
@@ -52,7 +90,7 @@ function App() {
 
         <article className="panel panel-wide">
           <h2>Parser AST</h2>
-          <pre>{JSON.stringify(topItemList, null, 2)}</pre>
+          <pre>{astPreview}</pre>
         </article>
 
         <article className="panel panel-wide">

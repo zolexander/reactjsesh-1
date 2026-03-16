@@ -1,7 +1,7 @@
 import { SymbolCodes, type SymbolCode } from '../constants/SymbolCodes'
-import { LexicalSymbolsUtils } from '../constants/LexicalSymbolsUtils'
+import { LexicalSymbolsUtils, classifyGlyphCode, type GlyphKind } from '../constants/LexicalSymbolsUtils'
 
-export type GroupOperator = '-' | ':' | '*' | null
+export type GroupOperator = '-' | ':' | '*' | '&' | null
 
 abstract class EnumBase {
   readonly id: number
@@ -232,6 +232,17 @@ export class Hieroglyph {
     }
 
     return this.code.slice(start + 1, -1)
+  }
+
+  /**
+   * Returns the kind of this glyph's MdC code.
+   * Only meaningful when `type === SymbolCodes.MDCCODE`.
+   *
+   * - `'gardiner'`    — a real sign from the Gardiner sign list (Aa1, G17, V49A …)
+   * - `'placeholder'` — a letter-only stand-in such as X
+   */
+  get glyphKind(): GlyphKind {
+    return classifyGlyphCode(this.code)
   }
 
   isShadingSign(): boolean {

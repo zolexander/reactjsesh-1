@@ -1,6 +1,32 @@
 import { SymbolCodes, type SymbolCode } from './SymbolCodes'
 
 /**
+ * Classifies a MdC glyph code into its kind.
+ *
+ * - `'gardiner'`     — standard or extended Gardiner sign with a numeric index
+ *                      e.g. A1, G17, V49A, Aa1, NL5, NU22
+ * - `'placeholder'`  — letter-only code without a numeric index; used as
+ *                      a stand-in for an unknown or unspecified sign
+ *                      e.g. X, A (alone)
+ */
+export type GlyphKind = 'gardiner' | 'placeholder'
+
+/**
+ * Pattern for a Gardiner code: starts with an uppercase letter, optional
+ * 1-2 lowercase letters (category prefix), then one or more digits, then
+ * an optional uppercase variant suffix.
+ * Examples: A1, G17, V49A, Aa1, NL5
+ */
+const GARDINER_PATTERN = /^[A-Z][a-z]{0,2}[0-9]+[A-Z]?$/
+
+/**
+ * Returns the kind of a MdC glyph code.
+ */
+export function classifyGlyphCode(code: string): GlyphKind {
+  return GARDINER_PATTERN.test(code) ? 'gardiner' : 'placeholder'
+}
+
+/**
  * Maps SymbolCode → MdC string (the "manuel de codage" code for lexical items).
  * Mirrors the codesForSymbols array from LexicalSymbolsUtils.java.
  */
