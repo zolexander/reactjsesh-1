@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseMdC } from './mdcParser'
+import { CartoucheGroup } from '../model/CartoucheGroup'
 
 function expectSigns(mdc: string, expectedCadrats: number, expectedSignsPerCadrat: number[]): ReturnType<typeof parseMdC> {
   const ast = parseMdC(mdc)
@@ -30,6 +31,12 @@ describe('mdcParser', () => {
     expect(ast.items[0].signs[1].groupOp).toBe(':')
   })
 
+  it('"A1&B1" -> 1 Kadrat, zweites Zeichen mit groupOp=LIGATURE', () => {
+    const ast = expectSigns('A1&B1', 1, [2])
+    expect(ast.items[0].signs[0].groupOp).toBeNull()
+    expect(ast.items[0].signs[1].groupOp).toBe('&')
+  })
+
   it('"A1*B1:C1" -> 1 Kadrat, 3 Zeichen: A(NONE), B(HGROUP), C(VGROUP)', () => {
     const ast = expectSigns('A1*B1:C1', 1, [3])
     expect(ast.items[0].signs[0].groupOp).toBeNull()
@@ -54,11 +61,40 @@ describe('mdcParser', () => {
     expect(ast.items[1].signs[0].code.toLowerCase()).toBe('w')
     expect(ast.items[4].signs[0].code).toBe('A40')
   })
+
+  it('"<A1-B1>" -> 1 CartoucheGroup mit 2 inneren Kadraten', () => {
+    const ast = parseMdC('<A1-B1>')
+    expect(ast.items.length).toBe(1)
+    expect(ast.items[0]).toBeInstanceOf(CartoucheGroup)
+
+    const cartouche = ast.items[0] as CartoucheGroup
+    expect(cartouche.items.length).toBe(2)
+    expect(cartouche.items[0].signs[0].code).toBe('A1')
+    expect(cartouche.items[1].signs[0].code).toBe('B1')
+  })
+
+  it('"A1{{10,20,80}}" übernimmt absolute Position und Skalierung', () => {
+    const ast = parseMdC('A1{{10,20,80}}')
+    const glyph = ast.items[0].signs[0]
+
+    expect(glyph.getX()).toBe(10)
+    expect(glyph.getY()).toBe(20)
+    expect(glyph.getRelativeSize()).toBe(80)
+  })
+
+  it('"A1**B1" behandelt ** als Trenner zwischen Kadraten', () => {
+    const ast = parseMdC('A1**B1')
+    expect(ast.items.length).toBe(2)
+    expect(ast.items[0].signs[0].code).toBe('A1')
+    expect(ast.items[1].signs[0].code).toBe('B1')
+  })
 })
 
 describe('mdcParser robustness', () => {
   it('unknown token becomes UNKNOWN glyph and parsing continues', () => {
-    const ast = parseMdC('$')
+    // '$' wird inzwischen absichtlich vom Lexer übersprungen (Farbmarker-Rest).
+    // Für echte Unknown-Robustheit verwenden wir daher '?'.
+    const ast = parseMdC('?')
     expect(ast.items.length).toBe(1)
     expect(ast.items[0].signs.length).toBe(1)
     expect(ast.items[0].signs[0].code.toUpperCase()).toContain('UNKNOWN')
