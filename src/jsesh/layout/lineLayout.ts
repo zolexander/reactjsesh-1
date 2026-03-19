@@ -1,12 +1,13 @@
+// src/jsesh/layout/lineLayout.ts
+// FIX: y-Vorschub benutzt jetzt die tatsächliche max. Zeilenhöhe
+// statt immer cadratHeight — sonst werden Kartuschen (höher als cadratHeight)
+// bei mehrzeiligem Text von der nächsten Zeile überlappt.
+
 import { DrawingSpec } from './DrawingSpec'
 import type { LayoutResult } from './cadratLayout'
 
 export type LineBreakToken = '!' | '/*'
 
-/**
- * One cadrat that has already been layouted by `layoutGroupNode`.
- * `breakAfter` marks an explicit line break trigger from MdC tokens.
- */
 export interface LayoutedCadrat {
   layout: LayoutResult
   breakAfter?: LineBreakToken
@@ -30,34 +31,27 @@ export interface LineLayoutResult {
 type CadratLine = LayoutedCadrat[]
 
 function splitIntoLines(cadrats: readonly LayoutedCadrat[]): CadratLine[] {
-  if (cadrats.length === 0) {
-    return []
-  }
-
+  if (cadrats.length === 0) return []
   const lines: CadratLine[] = [[]]
-
   for (const cadrat of cadrats) {
-    const current = lines[lines.length - 1]
-    current.push(cadrat)
-
-    if (cadrat.breakAfter === '!' || cadrat.breakAfter === '/*') {
-      lines.push([])
-    }
+    lines[lines.length - 1].push(cadrat)
+    if (cadrat.breakAfter === '!' || cadrat.breakAfter === '/*') lines.push([])
   }
-
   return lines.filter((line) => line.length > 0)
 }
 
 function measureLineWidth(line: readonly LayoutedCadrat[], spec: DrawingSpec): number {
-  if (line.length === 0) {
-    return 0
-  }
-
-  const widths = line.reduce((sum, item) => sum + item.layout.width, 0)
-  return widths + spec.signSpacing * (line.length - 1)
+  if (line.length === 0) return 0
+  return line.reduce((sum, item) => sum + item.layout.width, 0) + spec.signSpacing * (line.length - 1)
 }
 
-function moveLayout(layout: LayoutResult, offsetX: number, offsetY: number): LayoutResult {
+/** Maximale Höhe aller Elemente einer Zeile */
+function measureLineHeight(line: readonly LayoutedCadrat[], spec: DrawingSpec): number {
+  if (line.length === 0) return spec.cadratHeight
+  return Math.max(...line.map((item) => item.layout.height), spec.cadratHeight)
+}
+
+export function moveLayout(layout: LayoutResult, offsetX: number, offsetY: number): LayoutResult {
   return {
     ...layout,
     x: layout.x + offsetX,
@@ -66,62 +60,45 @@ function moveLayout(layout: LayoutResult, offsetX: number, offsetY: number): Lay
   }
 }
 
-function placeLineLTR(line: readonly LayoutedCadrat[], startX: number, y: number, spec: DrawingSpec): PlacedCadrat[] {
+function placeLineLTR(line: readonly LayoutedCadrat[], startX: number, y: number, lineH: number, spec: DrawingSpec): PlacedCadrat[] {
   const placed: PlacedCadrat[] = []
   let x = startX
-
   for (const item of line) {
+    // Vertikal am Boden der Zeile ausrichten (wie Hieroglyphen auf einer Grundlinie)
+    const itemY = y + (lineH - item.layout.height)
     placed.push({
       x,
-      y,
+      y: itemY,
       width: item.layout.width,
       height: item.layout.height,
-      layout: moveLayout(item.layout, x, y),
+      layout: moveLayout(item.layout, x, itemY),
       breakAfter: item.breakAfter,
     })
-
     x += item.layout.width + spec.signSpacing
   }
-
   return placed
 }
 
-function placeLineRTL(
-  line: readonly LayoutedCadrat[],
-  lineRightEdgeX: number,
-  y: number,
-  spec: DrawingSpec,
-): PlacedCadrat[] {
+function placeLineRTL(line: readonly LayoutedCadrat[], lineRightEdgeX: number, y: number, lineH: number, spec: DrawingSpec): PlacedCadrat[] {
   const placed: PlacedCadrat[] = []
   let cursor = lineRightEdgeX
-
   for (const item of line) {
     cursor -= item.layout.width
     const x = cursor
-
+    const itemY = y + (lineH - item.layout.height)
     placed.push({
       x,
-      y,
+      y: itemY,
       width: item.layout.width,
       height: item.layout.height,
-      layout: moveLayout(item.layout, x, y),
+      layout: moveLayout(item.layout, x, itemY),
       breakAfter: item.breakAfter,
     })
-
     cursor -= spec.signSpacing
   }
-
   return placed
 }
 
-/**
- * Places already-layouted cadrats into text lines.
- *
- * - Applies `signSpacing` only here.
- * - Wraps lines only on explicit break tokens (`!`, `/*`).
- * - Supports LTR and RTL placement.
- * - Returns placed cadrats and total text extent.
- */
 export function layoutCadratLines(
   cadrats: readonly LayoutedCadrat[],
   spec: DrawingSpec = new DrawingSpec(),
@@ -138,7 +115,6 @@ export function layoutCadratLines(
     const items: PlacedCadrat[] = []
     let y = spec.topMargin
     let maxWidth = 0
-
     for (const item of cadrats) {
       items.push({
         x: spec.leftMargin,
@@ -148,10 +124,9 @@ export function layoutCadratLines(
         layout: moveLayout(item.layout, spec.leftMargin, y),
         breakAfter: item.breakAfter,
       })
-      y += spec.cadratHeight + spec.lineSpacing
+      y += item.layout.height + spec.lineSpacing
       maxWidth = Math.max(maxWidth, item.layout.width)
     }
-
     return {
       items,
       totalWidth: spec.leftMargin + maxWidth + spec.rightMargin,
@@ -168,21 +143,18 @@ export function layoutCadratLines(
   let y = spec.topMargin
 
   for (const line of lines) {
+    // FIX: Tatsächliche Zeilenhöhe berechnen (nicht immer cadratHeight)
+    const lineH = measureLineHeight(line, spec)
+
     if (spec.direction === 'rtl') {
-      const lineRightEdgeX = totalWidth - spec.rightMargin
-      items.push(...placeLineRTL(line, lineRightEdgeX, y, spec))
+      items.push(...placeLineRTL(line, totalWidth - spec.rightMargin, y, lineH, spec))
     } else {
-      items.push(...placeLineLTR(line, spec.leftMargin, y, spec))
+      items.push(...placeLineLTR(line, spec.leftMargin, y, lineH, spec))
     }
 
-    y += spec.cadratHeight + spec.lineSpacing
+    y += lineH + spec.lineSpacing
   }
 
   const totalHeight = Math.max(spec.topMargin + spec.bottomMargin, y - spec.lineSpacing + spec.bottomMargin)
-
-  return {
-    items,
-    totalWidth,
-    totalHeight,
-  }
+  return { items, totalWidth, totalHeight }
 }

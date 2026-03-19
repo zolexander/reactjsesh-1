@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { HieroglyphCanvas, buildGroupTree, parseMdC, tokenizeMdC } from './jsesh'
+import { GlyFileUploader, GlyFileViewer } from './jsesh'
+
 import './App.css'
 
 const sampleMdC = 'A1-B1:C1*D1'
 
 function App() {
   const [mdcText, setMdcText] = useState(sampleMdC)
-
+  let myGlyString =''
   const tokens = useMemo(() => tokenizeMdC(mdcText), [mdcText])
   const parseResult = useMemo(() => {
     try {
@@ -64,6 +66,11 @@ function App() {
           <div className="render-preview">
             <HieroglyphCanvas mdc={mdcText} />
           </div>
+          <GlyFileUploader spec={{ cadratHeight: 60 }} />
+
+        {myGlyString && (
+          <GlyFileViewer debug={true} glyContent={myGlyString} showMetadata />
+        )}
         </article>
 
         <article className="panel">
