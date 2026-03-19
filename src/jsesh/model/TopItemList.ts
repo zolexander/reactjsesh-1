@@ -1,13 +1,16 @@
 import { Cadrat } from './Cadrat'
+import type { CartoucheGroup } from './CartoucheGroup'
+
+export type TopItem = Cadrat | CartoucheGroup
 
 export class TopItemList {
-  readonly items: Cadrat[]
+  readonly items: TopItem[]
 
-  constructor(items: Cadrat[] = []) {
+  constructor(items: TopItem[] = []) {
     this.items = items
   }
 
-  add(cadrat: Cadrat): void {
-    this.items.push(cadrat)
+  add(item: TopItem): void {
+    this.items.push(item)
   }
 }

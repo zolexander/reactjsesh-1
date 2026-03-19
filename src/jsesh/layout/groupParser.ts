@@ -1,3 +1,7 @@
+// src/jsesh/layout/groupParser.ts
+// FIX: '-' als vertikaler Split entfernt — '-' ist der Kadrat-Separator auf
+// Top-Level und darf nie als groupOp innerhalb eines Kadrats erscheinen.
+
 import { Hieroglyph, type GroupOperator } from '../model/Hieroglyph'
 
 export type GroupNode =
@@ -6,6 +10,12 @@ export type GroupNode =
   | { type: 'hgroup'; children: GroupNode[] }
   | { type: 'ligature'; children: GroupNode[] }
 
+/**
+ * Teilt eine flache Zeichen-Liste an jedem Zeichen auf, das den angegebenen
+ * groupOp trägt. Das Zeichen MIT dem Operator gehört zum NEUEN Teil (rechts).
+ *
+ * Beispiel: [A(null), B(*), C(:)] split by ':' → [[A, B], [C]]
+ */
 function splitByOperator(signs: readonly Hieroglyph[], operator: GroupOperator): Hieroglyph[][] {
   if (signs.length === 0) {
     return []
@@ -15,19 +25,18 @@ function splitByOperator(signs: readonly Hieroglyph[], operator: GroupOperator):
 
   for (let i = 0; i < signs.length; i += 1) {
     const sign = signs[i]
-
-    // groupOp belongs to the current sign and links it to the previous one.
+    // groupOp am aktuellen Zeichen = Verbindung zum LINKEN Nachbarn
     if (i > 0 && sign.groupOp === operator) {
       parts.push([sign])
       continue
     }
-
     parts[parts.length - 1].push(sign)
   }
 
   return parts.filter((part) => part.length > 0)
 }
 
+/** Höchste Priorität: & (Ligatur) */
 function parseLigature(signs: readonly Hieroglyph[]): GroupNode {
   const parts = splitByOperator(signs, '&' as GroupOperator)
 
@@ -42,13 +51,14 @@ function parseLigature(signs: readonly Hieroglyph[]): GroupNode {
     return { type: 'sign', glyph: signs[0] }
   }
 
-  // Fallback for malformed sequences without explicit operators.
+  // Fallback für fehlerhafte Eingaben ohne explizite Operatoren
   return {
     type: 'ligature',
-    children: signs.map((glyph) => ({ type: 'sign', glyph })),
+    children: signs.map((glyph) => ({ type: 'sign' as const, glyph })),
   }
 }
 
+/** Mittlere Priorität: * (horizontal nebeneinander) */
 function parseHGroup(signs: readonly Hieroglyph[]): GroupNode {
   const parts = splitByOperator(signs, '*' as GroupOperator)
 
@@ -62,10 +72,16 @@ function parseHGroup(signs: readonly Hieroglyph[]): GroupNode {
   return parseLigature(signs)
 }
 
+/**
+ * Niedrigste Priorität: : (vertikal übereinander)
+ *
+ * FIX: '-' als vertikaler Split ENTFERNT. '-' ist der Kadrat-Separator auf
+ * Top-Level-Ebene und gehört nicht in die Gruppen-Logik innerhalb eines Kadrats.
+ * Ein Zeichen mit groupOp='-' darf in einem korrekt geparsten Kadrat nie
+ * vorkommen — das wäre ein Parser-Bug.
+ */
 function parseVGroup(signs: readonly Hieroglyph[]): GroupNode {
-  // Legacy compatibility: '-' is treated as vertical split here as well.
-  const byColon = splitByOperator(signs, ':' as GroupOperator)
-  const parts = byColon.length > 1 ? byColon : splitByOperator(signs, '-' as GroupOperator)
+  const parts = splitByOperator(signs, ':' as GroupOperator)
 
   if (parts.length > 1) {
     return {
@@ -77,10 +93,19 @@ function parseVGroup(signs: readonly Hieroglyph[]): GroupNode {
   return parseHGroup(signs)
 }
 
+/**
+ * Wandelt eine flache Hieroglyphen-Liste (mit groupOp-Feldern) in einen
+ * Gruppen-Baum um. Operator-Priorität (niedrig → hoch): : < * < &
+ *
+ * Beispiele:
+ *   [A(null), B(*), C(:)] → vgroup[ hgroup[A, B], C ]
+ *   [A(null), B(:)]       → vgroup[ A, B ]
+ *   [A(null), B(*)]       → hgroup[ A, B ]
+ *   [A(null), B(&)]       → ligature[ A, B ]
+ */
 export function buildGroupTree(signs: readonly Hieroglyph[]): GroupNode | null {
   if (signs.length === 0) {
     return null
   }
-
   return parseVGroup(signs)
 }

@@ -71,7 +71,7 @@ export class Hieroglyph {
   y = 0
   reversed = false
   wide = false
-
+  color?: string
   constructor(codeOrType: string | SymbolCode = 'A1', groupOp: GroupOperator = null) {
     this.code = 'A1'
     this.groupOp = groupOp
@@ -125,6 +125,7 @@ export class Hieroglyph {
     result.y = this.y
     result.reversed = this.reversed
     result.wide = this.wide
+    result.color = this.color
     return result
   }
 
@@ -268,7 +269,8 @@ export class Hieroglyph {
       this.scale === other.scale &&
       this.angle === other.angle &&
       this.reversed === other.reversed &&
-      this.wide === other.wide
+      this.wide === other.wide &&
+      this.color === other.color
     )
   }
 
