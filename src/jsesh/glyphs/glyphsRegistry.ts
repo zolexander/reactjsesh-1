@@ -1,4 +1,10 @@
+// src/jsesh/glyphs/glyphsRegistry.ts
+// FIX: resolveGardinerCode() wird jetzt beim Laden verwendet.
+// MdC-Codes wie 'i', 'w', 'ra' werden auf Gardiner-SVG-Dateinamen
+// ('M17', 'G43', 'N5') aufgelöst bevor der Fetch passiert.
+
 import { parseGlyphSvg, type ParsedGlyphSvgMetrics } from './svgParser'
+import { resolveGardinerCode } from './mdcToGardiner'
 
 export type GlyphMetrics = ParsedGlyphSvgMetrics
 
@@ -15,83 +21,48 @@ class GlyphRegistry {
   private readonly metricsByCode = new Map<string, GlyphMetrics>()
   private readonly pendingByCode = new Map<string, Promise<void>>()
 
-  private async fetchGlyphSvg(code: string): Promise<string | null> {
-    if (typeof fetch === 'undefined') {
-      return null
-    }
-
-    const url = `/glyphs/${encodeURIComponent(code)}.svg`
+  private async fetchGlyphSvg(gardinerCode: string): Promise<string | null> {
+    if (typeof fetch === 'undefined') return null
+    const url = `/glyphs/${encodeURIComponent(gardinerCode)}.svg`
     const response = await fetch(url)
-    if (!response.ok) {
-      return null
-    }
-
+    if (!response.ok) return null
     return response.text()
   }
 
-  /**
-   * Returns metrics synchronously from in-memory cache.
-   *
-   * If this glyph wasn't loaded yet, loading is started lazily in background and
-   * fallback metrics are returned until the load finishes.
-   */
-  getMetrics(code: string): GlyphMetrics {
-    const cached = this.metricsByCode.get(code)
-    if (cached) {
-      return cached
-    }
-
-    this.ensureLoaded(code)
-    return FALLBACK_METRICS
+  getMetrics(mdcCode: string): GlyphMetrics {
+    const gardinerCode = resolveGardinerCode(mdcCode)
+    return this.metricsByCode.get(gardinerCode) ?? FALLBACK_METRICS
   }
 
-  /**
-   * No-op in runtime fetch mode (glyphs are loaded lazily by code).
-   */
-  async preloadAll(): Promise<void> {
-    await Promise.resolve()
-  }
-
-  private ensureLoaded(code: string): Promise<void> {
-    if (this.metricsByCode.has(code)) {
-      return Promise.resolve()
-    }
-
-    const pending = this.pendingByCode.get(code)
-    if (pending) {
-      return pending
-    }
-
-    const task = this.fetchGlyphSvg(code)
+  async ensureLoaded(mdcCode: string): Promise<void> {
+    const gardinerCode = resolveGardinerCode(mdcCode)
+    if (this.metricsByCode.has(gardinerCode)) return
+    const pending = this.pendingByCode.get(gardinerCode)
+    if (pending) return pending
+    const task = this.fetchGlyphSvg(gardinerCode)
       .then((svgRaw) => {
-        if (!svgRaw) {
-          this.metricsByCode.set(code, FALLBACK_METRICS)
-          return
-        }
-
-        const metrics = parseGlyphSvg(svgRaw)
-        this.metricsByCode.set(code, metrics)
+        if (!svgRaw) { this.metricsByCode.set(gardinerCode, FALLBACK_METRICS); return }
+        try {
+          const metrics = parseGlyphSvg(svgRaw)
+          this.metricsByCode.set(gardinerCode,
+            (metrics.naturalWidth === 0 || metrics.naturalHeight === 0) ? FALLBACK_METRICS : metrics)
+        } catch { this.metricsByCode.set(gardinerCode, FALLBACK_METRICS) }
       })
-      .catch(() => {
-        this.metricsByCode.set(code, FALLBACK_METRICS)
-      })
-      .finally(() => {
-        this.pendingByCode.delete(code)
-      })
-
-    this.pendingByCode.set(code, task)
+      .catch(() => { this.metricsByCode.set(gardinerCode, FALLBACK_METRICS) })
+      .finally(() => { this.pendingByCode.delete(gardinerCode) })
+    this.pendingByCode.set(gardinerCode, task)
     return task
+  }
+
+  async preloadAll(codes?: readonly string[]): Promise<void> {
+    if (!codes || codes.length === 0) return
+    await Promise.all(codes.map((code) => this.ensureLoaded(code)))
   }
 }
 
 let singletonRegistry: GlyphRegistry | null = null
-
 export function getGlyphRegistry(): GlyphRegistry {
-  if (!singletonRegistry) {
-    singletonRegistry = new GlyphRegistry()
-  }
-
+  if (!singletonRegistry) singletonRegistry = new GlyphRegistry()
   return singletonRegistry
 }
-
 export const glyphRegistry = getGlyphRegistry()
